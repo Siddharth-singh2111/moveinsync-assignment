@@ -2,6 +2,7 @@ package com.moveinsync.distance.core.rule;
 
 import com.moveinsync.distance.core.model.Segment;
 import com.moveinsync.distance.core.model.SegmentRule;
+import com.moveinsync.distance.core.routing.RoutingException;
 import com.moveinsync.distance.core.routing.RoutingProvider;
 
 import java.util.Optional;
@@ -22,7 +23,16 @@ final class RoutedClassifier implements SegmentClassifier {
 
     @Override
     public Optional<Segment> classify(PairContext c) {
-        long routed = provider.driveMeters(c.from().location(), c.to().location());
+        long routed;
+        try {
+            routed = provider.driveMeters(c.from().location(), c.to().location());
+        } catch (RoutingException e) {
+            // Provider unavailable (or circuit open): bill a bounded aerial estimate and mark
+            // the segment degraded so the trip can be recomputed once the provider recovers.
+            long degradedMeters = Math.round(c.aerialMeters() * c.config().degradedMultiplier());
+            return Optional.of(new Segment(c.from().location(), c.to().location(),
+                    degradedMeters, SegmentRule.DEGRADED_AERIAL, false));
+        }
 
         double routedSpeedKmh = (routed / c.gapSeconds()) * 3.6;
         double aerialBoundSpeedKmh = (c.aerialMeters() * 1.4 / c.gapSeconds()) * 3.6;
