@@ -299,8 +299,20 @@ calls = number of *real* gaps `g` (usually `g ≪ n`), reduced further by cache.
 
 ## 13. Tech stack & run
 
-Java 21 · Spring Boot · PostgreSQL · Redis (cache) · Resilience4j (circuit breaker) ·
-Micrometer + Prometheus · JUnit 5 + Testcontainers · Docker Compose.
+Java 21 · Spring Boot 3.3 · PostgreSQL · Caffeine (in-process cache) · a hand-rolled circuit
+breaker · JWT (jjwt) auth · Micrometer + Prometheus · JUnit 5 (+ H2 for the web/persistence tests).
 
-**One command:** `docker compose up` brings up the app, Postgres, and Redis. The core engine also
-runs headless via a CLI for the benchmark (`./run-benchmark.sh`).
+**One command:** `docker compose up --build` brings up the app and Postgres (the app is built
+inside Docker, so only Docker is required). The engine also runs headless for the benchmark
+(`./run-benchmark.sh`).
+
+### As-built notes (deviations from the sketch above)
+- **Caffeine instead of Redis** for the snapped-cell cache — one fewer container for a single-node
+  submission; the cache sits behind the `RoutingProvider` interface, so Redis is a drop-in later.
+- **Hand-rolled `CircuitBreaker`** instead of Resilience4j — small, deterministic, unit-tested.
+- Providers are layered **cache → breaker → base**, so the breaker never counts a cache hit and the
+  cache treats a breaker fast-fail as a miss.
+
+### Measured (10,000 trips × 1,500 pings; Apple Silicon laptop, JDK 27)
+- 2.56 s total (~3,900 trips/s); compute p50 0.22 ms, p99 0.63 ms; ~29 MB heap.
+- Routing calls: **105,000 before caching → 16 after** (hub-repeating synthetic workload).
