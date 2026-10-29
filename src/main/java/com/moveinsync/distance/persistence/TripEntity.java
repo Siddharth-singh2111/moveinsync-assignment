@@ -60,7 +60,7 @@ public class TripEntity {
     @Column(name = "segments_json", nullable = false)
     private String segmentsJson;
 
-    protected TripEntity() {
+    public TripEntity() {
     }
 
     public String getTripId() {

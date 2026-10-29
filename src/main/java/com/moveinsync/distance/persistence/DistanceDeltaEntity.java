@@ -42,7 +42,7 @@ public class DistanceDeltaEntity {
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;
 
-    protected DistanceDeltaEntity() {
+    public DistanceDeltaEntity() {
     }
 
     public Long getId() {
