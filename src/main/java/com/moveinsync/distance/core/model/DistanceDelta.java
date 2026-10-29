@@ -1,7 +1,6 @@
 package com.moveinsync.distance.core.model;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.Objects;
 
@@ -26,7 +25,6 @@ public record DistanceDelta(String tripId,
 
     /** The signed correction in kilometres (may be negative), half-up to 3 dp. */
     public BigDecimal deltaKm() {
-        return BigDecimal.valueOf(deltaMeters)
-                .divide(BigDecimal.valueOf(1000), 3, RoundingMode.HALF_UP);
+        return Metres.toKilometres(deltaMeters);
     }
 }
