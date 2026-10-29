@@ -1,0 +1,53 @@
+spring:
+  application:
+    name: gps-distance
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/distance}
+    username: ${SPRING_DATASOURCE_USERNAME:distance}
+    password: ${SPRING_DATASOURCE_PASSWORD:distance}
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  cache:
+    type: caffeine
+    caffeine:
+      spec: maximumSize=100000,expireAfterWrite=7d
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      show-details: when_authorized
+
+resilience4j:
+  circuitbreaker:
+    instances:
+      routingProvider:
+        sliding-window-size: 20
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 10s
+        permitted-number-of-calls-in-half-open-state: 3
+        automatic-transition-from-open-to-half-open-enabled: true
+
+# Domain rule thresholds — see DESIGN.md section 5. All configurable; the active
+# set is stamped onto every DistanceResult as `ruleVersion` for determinism.
+distance:
+  rules:
+    version: 1
+    max-speed-kmh: 120          # teleport filter + routed-speed sanity limit
+    min-accuracy-m: 50          # drop fixes less accurate than this
+    short-gap-seconds: 70       # below this, a plausible-speed gap is aerial
+    parked-speed-kmh: 5         # below this over a long gap, the cab was parked
+    office-radius-m: 400        # actual trip-end accepted only within this of office
+    routed-max-km: 100          # reject a single routed segment above this
+    degraded-multiplier: 1.4    # aerial multiplier when provider is unavailable
+  cache:
+    snap-geohash-precision: 7   # cell size for the routing-distance cache key

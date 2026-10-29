@@ -1,0 +1,26 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: distance
+      POSTGRES_USER: distance
+      POSTGRES_PASSWORD: distance
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U distance"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  app:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/distance
+      SPRING_DATASOURCE_USERNAME: distance
+      SPRING_DATASOURCE_PASSWORD: distance
+    ports:
+      - "8080:8080"

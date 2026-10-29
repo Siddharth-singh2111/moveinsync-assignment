@@ -1,0 +1,7 @@
+.git
+target
+*.iml
+.idea
+.vscode
+benchmark-results
+*.log
