@@ -22,5 +22,7 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/distance
       SPRING_DATASOURCE_USERNAME: distance
       SPRING_DATASOURCE_PASSWORD: distance
+      # Override the JWT signing secret here in a real deployment (>= 32 bytes).
+      DISTANCE_AUTH_SECRET: compose-demo-secret-change-me-0123456789-abcdef
     ports:
       - "8080:8080"
