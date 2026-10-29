@@ -9,11 +9,14 @@ import com.moveinsync.distance.core.model.DistanceResult;
 import com.moveinsync.distance.core.model.Ping;
 import com.moveinsync.distance.core.model.Segment;
 import com.moveinsync.distance.core.model.TripStatus;
+import com.moveinsync.distance.metrics.DistanceMetrics;
 import com.moveinsync.distance.persistence.DistanceDeltaEntity;
 import com.moveinsync.distance.persistence.DistanceDeltaRepository;
 import com.moveinsync.distance.persistence.JsonCodec;
 import com.moveinsync.distance.persistence.TripEntity;
 import com.moveinsync.distance.persistence.TripRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -27,10 +30,14 @@ import java.util.Optional;
  * Application service over the engine and the stores. Enforces tenant scoping on every access,
  * keeps a billed trip's result immutable (recording corrections as deltas), and overwrites the
  * stored result only while the trip is not yet billed.
+ *
+ * <p>Logs carry only non-identifying fields (trip id, tenant, totals) — never coordinates or any
+ * personal data.
  */
 @Service
 public class TripService {
 
+    private static final Logger log = LoggerFactory.getLogger(TripService.class);
     private static final TypeReference<List<Segment>> SEGMENT_LIST = new TypeReference<>() {
     };
 
@@ -38,26 +45,28 @@ public class TripService {
     private final TripRepository trips;
     private final DistanceDeltaRepository deltas;
     private final JsonCodec json;
+    private final DistanceMetrics metrics;
     private final Clock clock;
 
-    public TripService(DistanceEngine engine, TripRepository trips,
-                       DistanceDeltaRepository deltas, JsonCodec json, Clock clock) {
+    public TripService(DistanceEngine engine, TripRepository trips, DistanceDeltaRepository deltas,
+                       JsonCodec json, DistanceMetrics metrics, Clock clock) {
         this.engine = engine;
         this.trips = trips;
         this.deltas = deltas;
         this.json = json;
+        this.metrics = metrics;
         this.clock = clock;
     }
 
     @Transactional
     public TripComputation compute(String tenantId, TripInputs inputs) {
-        return persist(tenantId, inputs, engine.compute(inputs), "compute");
+        return persist(tenantId, inputs, run(inputs), "compute");
     }
 
     @Transactional
     public TripComputation recompute(String tenantId, String tripId, String reason) {
         TripInputs inputs = json.read(require(tenantId, tripId).getInputsJson(), TripInputs.class);
-        return persist(tenantId, inputs, engine.compute(inputs), reason);
+        return persist(tenantId, inputs, run(inputs), reason);
     }
 
     @Transactional
@@ -67,7 +76,7 @@ public class TripService {
         merged.addAll(newPings);
         TripInputs updated = new TripInputs(existing.tripId(), merged, existing.milestones(),
                 existing.ridersById(), existing.plannedOffice(), existing.actualTripEnd(), existing.tripEndTime());
-        return persist(tenantId, updated, engine.compute(updated), "late-pings");
+        return persist(tenantId, updated, run(updated), "late-pings");
     }
 
     @Transactional
@@ -75,6 +84,7 @@ public class TripService {
         TripEntity e = require(tenantId, tripId);
         e.setStatus(TripStatus.BILLED);
         trips.save(e);
+        log.info("trip {} tenant {} billed", tripId, tenantId);
     }
 
     @Transactional(readOnly = true)
@@ -89,6 +99,12 @@ public class TripService {
                 .stream().map(TripService::toDelta).toList();
     }
 
+    private DistanceResult run(TripInputs inputs) {
+        DistanceResult result = metrics.time(() -> engine.compute(inputs));
+        metrics.recordComputation(result);
+        return result;
+    }
+
     private TripComputation persist(String tenantId, TripInputs inputs, DistanceResult result, String reason) {
         Optional<TripEntity> existing = trips.findByTripIdAndTenantId(inputs.tripId(), tenantId);
 
@@ -98,6 +114,9 @@ public class TripService {
             DistanceDelta appended = Deltas.between(previous, result, reason, Instant.now(clock))
                     .map(delta -> {
                         deltas.save(toDeltaEntity(tenantId, delta));
+                        metrics.recordDeltaAppended();
+                        log.info("trip {} tenant {} delta {}m reason={}",
+                                delta.tripId(), tenantId, delta.deltaMeters(), reason);
                         return delta;
                     })
                     .orElse(null);
@@ -111,6 +130,8 @@ public class TripService {
             entity.setStatus(TripStatus.COMPUTED);
         }
         trips.save(entity);
+        log.info("trip {} tenant {} computed total={}m status={} providerCalls={}",
+                result.tripId(), tenantId, result.totalMeters(), result.status(), result.providerCalls());
         return new TripComputation(result, null, entity.getStatus());
     }
 
