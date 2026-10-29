@@ -1,6 +1,7 @@
 package com.moveinsync.distance.api;
 
 import com.moveinsync.distance.api.dto.Dtos;
+import com.moveinsync.distance.security.InvalidCredentialsException;
 import com.moveinsync.distance.service.TripNotFoundException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -37,6 +38,12 @@ public class GlobalExceptionHandler {
     public ResponseEntity<Dtos.ErrorResponse> missingHeader(MissingRequestHeaderException e) {
         return ResponseEntity.badRequest()
                 .body(new Dtos.ErrorResponse("missing_header", "missing required header: " + e.getHeaderName()));
+    }
+
+    @ExceptionHandler(InvalidCredentialsException.class)
+    public ResponseEntity<Dtos.ErrorResponse> invalidCredentials(InvalidCredentialsException e) {
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                .body(new Dtos.ErrorResponse("invalid_credentials", "invalid username or password"));
     }
 
     @ExceptionHandler(Exception.class)

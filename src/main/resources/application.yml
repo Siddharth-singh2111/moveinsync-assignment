@@ -46,3 +46,21 @@ distance:
     road-factor: 1.3              # fake provider: driving distance = aerial x this
     circuit-failure-threshold: 5  # consecutive failures before the circuit opens
     circuit-open-seconds: 10      # cooldown before a half-open probe
+  auth:
+    # Override the secret in production via DISTANCE_AUTH_SECRET; must be >= 32 bytes.
+    secret: ${DISTANCE_AUTH_SECRET:local-dev-secret-change-me-0123456789-abcdef}
+    token-ttl-minutes: 120
+    # Demo users. In production these would come from a real identity provider.
+    users:
+      - username: operator
+        password: operator-pass
+        tenant-id: tenantA
+        role: OPERATOR
+      - username: viewer
+        password: viewer-pass
+        tenant-id: tenantA
+        role: EMPLOYEE
+      - username: admin
+        password: admin-pass
+        tenant-id: tenantA
+        role: ADMIN

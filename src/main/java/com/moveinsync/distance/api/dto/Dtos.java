@@ -59,4 +59,10 @@ public final class Dtos {
 
     public record ErrorResponse(String error, String message) {
     }
+
+    public record LoginRequest(String username, String password) {
+    }
+
+    public record LoginResponse(String token, String tenantId, String role) {
+    }
 }
