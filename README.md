@@ -1,5 +1,7 @@
 # GPS Gap Backfill & Billable Distance Reconstruction
 
+[![CI](https://github.com/Siddharth-singh2111/moveinsync-assignment/actions/workflows/ci.yml/badge.svg)](https://github.com/Siddharth-singh2111/moveinsync-assignment/actions/workflows/ci.yml)
+
 Rebuilds a trusted, **explainable** billable distance for every cab trip from unreliable GPS
 pings. Cheap maths where possible, trusted anchor points where needed, and a cached,
 circuit-broken routing provider only for real gaps — with every segment labelled by the rule
@@ -33,9 +35,12 @@ Starts PostgreSQL and the service (built inside Docker — only Docker is requir
 ### Test and benchmark locally
 
 ```bash
-./mvnw test             # 86 tests; uses in-memory H2, no Docker needed
+./mvnw test             # full suite; uses in-memory H2, no Docker needed
 ./run-benchmark.sh      # 10000 trips x 1500 pings (override: ./run-benchmark.sh 2000 1000)
 ```
+
+CI (GitHub Actions) runs the whole suite on every push, including an integration test that runs
+against a **real PostgreSQL** via Testcontainers (it skips locally when Docker isn't available).
 
 ## API
 
