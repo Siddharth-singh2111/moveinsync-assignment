@@ -44,7 +44,8 @@ public class EngineConfig {
     public CachingRoutingProvider routingProvider(DistanceProperties props, CircuitBreaker breaker) {
         RoutingProvider base = new FakeRoutingProvider(props.provider().roadFactor());
         RoutingProvider resilient = new ResilientRoutingProvider(base, breaker);
-        return new CachingRoutingProvider(resilient, props.cache().snapDecimals());
+        return new CachingRoutingProvider(resilient, props.cache().snapDecimals(),
+                props.cache().maxSize(), Duration.ofHours(props.cache().ttlHours()));
     }
 
     @Bean

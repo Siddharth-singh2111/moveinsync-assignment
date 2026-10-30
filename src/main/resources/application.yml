@@ -13,11 +13,6 @@ spring:
       hibernate:
         jdbc:
           time_zone: UTC
-  cache:
-    type: caffeine
-    caffeine:
-      spec: maximumSize=100000,expireAfterWrite=7d
-
 management:
   endpoints:
     web:
@@ -42,6 +37,8 @@ distance:
     include-no-show-anchors: true
   cache:
     snap-decimals: 3              # coordinate decimals for the routing-cache cell key
+    max-size: 100000              # LRU eviction bound (cap on memory)
+    ttl-hours: 168                # entries expire after this (7 days) — bounds staleness
   provider:
     road-factor: 1.3              # fake provider: driving distance = aerial x this
     circuit-failure-threshold: 5  # consecutive failures before the circuit opens

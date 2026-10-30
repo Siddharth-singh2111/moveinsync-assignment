@@ -20,7 +20,7 @@ public record DistanceProperties(Rules rules, Cache cache, Provider provider) {
                         boolean includeNoShowAnchors) {
     }
 
-    public record Cache(int snapDecimals) {
+    public record Cache(int snapDecimals, long maxSize, long ttlHours) {
     }
 
     public record Provider(double roadFactor, int circuitFailureThreshold, long circuitOpenSeconds) {
