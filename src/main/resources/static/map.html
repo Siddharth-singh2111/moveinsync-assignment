@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <title>GPS Distance Visualizer</title>
+    <link rel="stylesheet"
+          href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+    <style>
+        :root {
+            --bg: #0f1115; --panel: #171a21; --ink: #e6e8eb; --muted: #9aa3af; --line: #272b33;
+            --routed: #3b82f6; --short: #22c55e; --parked: #9ca3af; --rejected: #f59e0b; --degraded: #ef4444;
+        }
+        * { box-sizing: border-box; }
+        body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+            color: var(--ink); background: var(--bg); }
+        header { padding: 14px 16px; border-bottom: 1px solid var(--line); display: flex;
+            gap: 10px; flex-wrap: wrap; align-items: center; }
+        header h1 { font-size: 16px; margin: 0 12px 0 0; font-weight: 650; }
+        input { background: #0b0d11; color: var(--ink); border: 1px solid var(--line);
+            border-radius: 8px; padding: 7px 9px; font-size: 13px; }
+        button { background: var(--routed); color: white; border: 0; border-radius: 8px;
+            padding: 8px 14px; font-size: 13px; font-weight: 600; cursor: pointer; }
+        button:disabled { opacity: .6; cursor: default; }
+        .wrap { display: flex; height: calc(100vh - 59px); }
+        #map { flex: 1; min-width: 0; }
+        aside { width: 340px; max-width: 45vw; border-left: 1px solid var(--line);
+            background: var(--panel); padding: 14px 16px; overflow-y: auto; }
+        .total { font-size: 22px; font-weight: 700; }
+        .sub { color: var(--muted); font-size: 12px; margin-bottom: 14px; }
+        .legend span { display: inline-flex; align-items: center; gap: 6px; margin: 0 10px 8px 0;
+            font-size: 12px; color: var(--muted); }
+        .dot { width: 12px; height: 4px; border-radius: 2px; display: inline-block; }
+        .seg { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin: 8px 0;
+            font-size: 13px; }
+        .seg .rule { font-weight: 650; }
+        .seg .km { float: right; color: var(--muted); }
+        .err { color: var(--degraded); font-size: 13px; }
+        @media (max-width: 760px) { .wrap { flex-direction: column; } aside { width: 100%; max-width: none; } #map { height: 50vh; } }
+    </style>
+</head>
+<body>
+<header>
+    <h1>GPS Distance Visualizer</h1>
+    <input id="base" value="" placeholder="http://localhost:8080" size="22"/>
+    <input id="user" value="operator" size="10"/>
+    <input id="pass" value="operator-pass" size="12" type="password"/>
+    <button id="go">Compute &amp; show sample trip</button>
+</header>
+<div class="wrap">
+    <div id="map"></div>
+    <aside>
+        <div id="summary"><div class="sub">Click the button to compute a sample trip and plot it.</div></div>
+        <div class="legend" id="legend"></div>
+        <div id="segments"></div>
+    </aside>
+</div>
+<script>
+    const RULE_COLOR = {
+        SHORT_GAP_AERIAL: getComputedStyle(document.documentElement).getPropertyValue('--short').trim(),
+        ROUTED: getComputedStyle(document.documentElement).getPropertyValue('--routed').trim(),
+        PARKED: getComputedStyle(document.documentElement).getPropertyValue('--parked').trim(),
+        REJECTED_SPEED: getComputedStyle(document.documentElement).getPropertyValue('--rejected').trim(),
+        DEGRADED_AERIAL: getComputedStyle(document.documentElement).getPropertyValue('--degraded').trim(),
+    };
+    const RULE_TEXT = {
+        SHORT_GAP_AERIAL: 'short gap (straight line)',
+        ROUTED: 'real gap (driving distance)',
+        PARKED: 'cab parked (straight line)',
+        REJECTED_SPEED: 'implausible route rejected',
+        DEGRADED_AERIAL: 'provider down (bounded estimate)',
+    };
+
+    document.getElementById('base').value = window.location.origin;
+
+    const map = L.map('map').setView([12.95, 77.62], 12);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+        { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
+    let drawn = [];
+
+    const legend = document.getElementById('legend');
+    legend.innerHTML = Object.keys(RULE_COLOR).map(r =>
+        `<span><i class="dot" style="background:${RULE_COLOR[r]}"></i>${r}</span>`).join('');
+
+    // A sample trip with a short hop, a real (routed) gap, and a parked stretch.
+    const sampleTrip = {
+        tripId: 'map-demo',
+        pings: [
+            { lat: 12.9000, lon: 77.6000, timestamp: '2026-01-01T00:00:00Z', accuracyMeters: 10 },
+            { lat: 12.9008, lon: 77.6000, timestamp: '2026-01-01T00:00:12Z', accuracyMeters: 10 },
+            { lat: 12.9450, lon: 77.6000, timestamp: '2026-01-01T00:10:12Z', accuracyMeters: 10 },
+            { lat: 12.9451, lon: 77.6000, timestamp: '2026-01-01T00:40:12Z', accuracyMeters: 10 }
+        ],
+        milestones: [], riders: []
+    };
+
+    async function run() {
+        const base = document.getElementById('base').value.replace(/\/$/, '');
+        const btn = document.getElementById('go');
+        const summary = document.getElementById('summary');
+        btn.disabled = true;
+        summary.innerHTML = '<div class="sub">Working…</div>';
+        try {
+            const login = await fetch(base + '/api/auth/login', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username: document.getElementById('user').value, password: document.getElementById('pass').value })
+            });
+            if (!login.ok) throw new Error('login failed (' + login.status + ')');
+            const token = (await login.json()).token;
+            const auth = { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' };
+
+            await fetch(base + '/api/trips', { method: 'POST', headers: auth, body: JSON.stringify(sampleTrip) });
+            const explain = await (await fetch(base + '/api/trips/map-demo/explain', { headers: auth })).json();
+            render(explain);
+        } catch (e) {
+            summary.innerHTML = '<div class="err">' + e.message + '</div>';
+        } finally {
+            btn.disabled = false;
+        }
+    }
+
+    function render(explain) {
+        drawn.forEach(l => map.removeLayer(l));
+        drawn = [];
+        const bounds = [];
+        explain.segments.forEach(s => {
+            const a = [s.fromLat, s.fromLon], b = [s.toLat, s.toLon];
+            const line = L.polyline([a, b], { color: RULE_COLOR[s.rule] || '#fff', weight: 6, opacity: .9 }).addTo(map);
+            drawn.push(line);
+            bounds.push(a, b);
+        });
+        explain.segments.forEach((s, i) => {
+            if (i === 0) drawn.push(L.circleMarker([s.fromLat, s.fromLon], { radius: 5, color: '#fff' }).addTo(map));
+            drawn.push(L.circleMarker([s.toLat, s.toLon], { radius: 5, color: '#fff' }).addTo(map));
+        });
+        if (bounds.length) map.fitBounds(bounds, { padding: [40, 40] });
+
+        document.getElementById('summary').innerHTML =
+            `<div class="total">${explain.totalKm} km</div><div class="sub">trip ${explain.tripId} · status ${explain.status}</div>`;
+        document.getElementById('segments').innerHTML = explain.segments.map((s, i) =>
+            `<div class="seg"><span class="km">${(s.meters / 1000).toFixed(3)} km</span>
+             <span class="rule" style="color:${RULE_COLOR[s.rule]}">${i + 1}. ${s.rule}</span>
+             <div class="sub" style="margin:4px 0 0">${RULE_TEXT[s.rule] || ''}</div></div>`).join('');
+    }
+
+    document.getElementById('go').addEventListener('click', run);
+</script>
+</body>
+</html>

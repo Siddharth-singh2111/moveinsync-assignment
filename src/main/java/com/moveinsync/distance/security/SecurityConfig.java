@@ -32,6 +32,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/auth/**").permitAll()
                         .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
                         .requestMatchers("/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs", "/v3/api-docs/**").permitAll()
+                        .requestMatchers("/", "/map.html").permitAll()
                         .requestMatchers(HttpMethod.POST, "/api/trips/**").hasAnyRole("OPERATOR", "ADMIN")
                         .requestMatchers(HttpMethod.GET, "/api/trips/**").hasAnyRole("EMPLOYEE", "OPERATOR", "ADMIN")
                         .anyRequest().authenticated())

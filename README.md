@@ -68,6 +68,9 @@ A full end-to-end walkthrough (login → compute → explain → bill → late p
 **Interactive API docs:** open **http://localhost:8080/swagger-ui.html** — click **Authorize**,
 paste a token from `/api/auth/login`, and run every endpoint from the browser.
 
+**Visual demo:** open **http://localhost:8080/map.html** — one click computes a sample trip and
+draws it on a map, each segment colour-coded by its rule (routed / short / parked / degraded).
+
 Metrics are at `/actuator/prometheus` (authenticated); `/actuator/health` is public.
 
 ## Benchmark results
