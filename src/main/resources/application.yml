@@ -43,6 +43,8 @@ distance:
     road-factor: 1.3              # fake provider: driving distance = aerial x this
     circuit-failure-threshold: 5  # consecutive failures before the circuit opens
     circuit-open-seconds: 10      # cooldown before a half-open probe
+  recovery:
+    interval-ms: 30000            # how often to auto-recompute degraded trips after recovery
   auth:
     # Override the secret in production via DISTANCE_AUTH_SECRET; must be >= 32 bytes.
     secret: ${DISTANCE_AUTH_SECRET:local-dev-secret-change-me-0123456789-abcdef}
