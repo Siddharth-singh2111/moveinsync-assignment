@@ -60,6 +60,9 @@ A full end-to-end walkthrough (login → compute → explain → bill → late p
 ./demo.sh        # against a running docker compose
 ```
 
+**Interactive API docs:** open **http://localhost:8080/swagger-ui.html** — click **Authorize**,
+paste a token from `/api/auth/login`, and run every endpoint from the browser.
+
 Metrics are at `/actuator/prometheus` (authenticated); `/actuator/health` is public.
 
 ## Benchmark results
