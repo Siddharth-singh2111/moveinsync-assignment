@@ -68,11 +68,11 @@ Measured locally (Apple Silicon laptop, JDK 27), 10,000 trips × 1,500 pings:
 
 | Metric | Value |
 |---|---|
-| Total time | 2.56 s (~3,900 trips/s) |
-| Compute latency p50 / p99 | 0.22 ms / 0.63 ms |
-| Routing calls **before** caching | 105,000 |
-| Routing calls **after** caching | 16 |
-| Heap used | ~29 MB |
+| Total time | 2.57 s (~3,900 trips/s) |
+| Compute latency p50 / p99 | 0.23 ms / 0.50 ms |
+| Routing calls before → after caching | 105,000 → 16 |
+| Batched round-trips to provider (whole run) | 6 |
+| Heap used | ~67 MB |
 
 Core per-trip complexity is `O(n log n)` for the sort plus `O(n)` for the pipeline (`n` = pings);
 routing calls are bounded by the number of *distinct* real gaps and collapsed further by the cache.

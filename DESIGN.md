@@ -314,5 +314,6 @@ inside Docker, so only Docker is required). The engine also runs headless for th
   cache treats a breaker fast-fail as a miss.
 
 ### Measured (10,000 trips × 1,500 pings; Apple Silicon laptop, JDK 27)
-- 2.56 s total (~3,900 trips/s); compute p50 0.22 ms, p99 0.63 ms; ~29 MB heap.
-- Routing calls: **105,000 before caching → 16 after** (hub-repeating synthetic workload).
+- 2.57 s total (~3,900 trips/s); compute p50 0.23 ms, p99 0.50 ms; ~67 MB heap.
+- Routing calls: **105,000 before caching → 16 after**; the provider is contacted in just **6
+  batched round-trips** for the whole run (the cache warms after the first few trips).

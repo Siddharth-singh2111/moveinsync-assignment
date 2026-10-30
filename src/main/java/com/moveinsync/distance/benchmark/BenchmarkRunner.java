@@ -46,7 +46,8 @@ public final class BenchmarkRunner {
 
     public record BenchmarkResult(int trips, int pingsPerTrip, long elapsedMillis, double throughputPerSec,
                                   double p50Millis, double p99Millis,
-                                  long requestsBeforeCache, long requestsAfterCache, long heapUsedMb) {
+                                  long requestsBeforeCache, long requestsAfterCache,
+                                  long batchRoundTrips, long heapUsedMb) {
     }
 
     public static BenchmarkResult run(int trips, int pingsPerTrip) {
@@ -79,7 +80,7 @@ public final class BenchmarkRunner {
         double throughput = trips / (elapsedNanos / 1_000_000_000.0);
 
         return new BenchmarkResult(trips, pingsPerTrip, elapsedNanos / 1_000_000, throughput,
-                p50, p99, before, after, heapUsedMb);
+                p50, p99, before, after, routing.batchCalls(), heapUsedMb);
     }
 
     private static TripInputs syntheticTrip(String id, int pings, int seed) {
@@ -123,9 +124,10 @@ public final class BenchmarkRunner {
                 compute p50 / p99    : %.3f ms / %.3f ms
                 routing calls before : %d
                 routing calls after  : %d  (%.1f%% fewer with caching)
+                batch round-trips    : %d
                 heap used            : %d MB
                 """.formatted(r.trips(), r.pingsPerTrip(), r.elapsedMillis(), r.throughputPerSec(),
                 r.p50Millis(), r.p99Millis(), r.requestsBeforeCache(), r.requestsAfterCache(),
-                reduction, r.heapUsedMb());
+                reduction, r.batchRoundTrips(), r.heapUsedMb());
     }
 }
