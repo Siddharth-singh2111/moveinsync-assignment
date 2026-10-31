@@ -181,25 +181,25 @@ sequenceDiagram
     participant Op as Operator
     participant SVC as TripService
     participant RE as RuleEngine
-    participant RP as Routing stack<br/>(cache→breaker→base)
+    participant RP as Routing stack
     participant DB as PostgreSQL
 
     Op->>SVC: POST /api/trips (compute)
-    SVC->>RE: run(cleaned inputs, ruleVersion)
+    SVC->>RE: run cleaned inputs, ruleVersion
     RE->>RP: driveMeters(real gaps)
-    RP--xRE: provider failing → circuit OPEN
-    RE-->>SVC: result = 29.1 km, status = DEGRADED
-    SVC->>DB: persist DEGRADED result (ruleVersion, inputHash)
+    RP--xRE: provider failing, circuit OPEN
+    RE-->>SVC: result 29.1 km, status DEGRADED
+    SVC->>DB: persist DEGRADED result
     Op->>SVC: POST /api/trips/{id}/bill
-    SVC->>DB: trip → BILLED at 29.1 km (now frozen)
+    SVC->>DB: trip BILLED at 29.1 km (now frozen)
 
-    Note over RP: provider recovers; circuit half-open → CLOSED
-    SVC->>SVC: DegradedTripRecoveryJob fires (@Scheduled)
-    SVC->>RE: recompute(same inputs, same ruleVersion)
-    RE->>RP: driveMeters(gaps) — succeeds, caches
-    RE-->>SVC: result = 30.6 km, status = OK
-    SVC->>DB: append DistanceDelta(+1.5 km, reason = PROVIDER_RECOVERED)
-    SVC-->>Op: /explain + /deltas reconcile the difference
+    Note over RP: provider recovers, circuit half-open to CLOSED
+    SVC->>SVC: DegradedTripRecoveryJob fires (scheduled)
+    SVC->>RE: recompute, same inputs and ruleVersion
+    RE->>RP: driveMeters(gaps) succeeds and caches
+    RE-->>SVC: result 30.6 km, status OK
+    SVC->>DB: append DistanceDelta +1.5 km, PROVIDER_RECOVERED
+    SVC-->>Op: /explain and /deltas reconcile the difference
 ```
 
 ---
