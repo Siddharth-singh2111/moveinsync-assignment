@@ -1,0 +1,151 @@
+{
+  "info": {
+    "name": "GPS Distance Reconstruction",
+    "description": "Demo flow for the MoveInSync case study: login -> compute -> distance -> explain -> bill -> late pings (signed delta) -> ledger. Run the requests top to bottom. The Login request saves the JWT into the {{token}} collection variable automatically, so every later request is already authorized.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      { "key": "token", "value": "{{token}}", "type": "string" }
+    ]
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080" },
+    { "key": "token", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "1 · Login (operator)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const body = pm.response.json();",
+              "pm.collectionVariables.set('token', body.token);",
+              "pm.test('got a token', () => pm.expect(body.token).to.be.a('string').and.not.empty);",
+              "console.log('tenant', body.tenantId, 'role', body.role);"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "auth": { "type": "noauth" },
+        "method": "POST",
+        "header": [ { "key": "Content-Type", "value": "application/json" } ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"username\": \"operator\",\n  \"password\": \"operator-pass\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/auth/login",
+          "host": [ "{{baseUrl}}" ],
+          "path": [ "api", "auth", "login" ]
+        },
+        "description": "Exchange demo credentials for a JWT. The test tab saves the token for every other request."
+      }
+    },
+    {
+      "name": "2 · Compute trip (one real gap)",
+      "request": {
+        "method": "POST",
+        "header": [ { "key": "Content-Type", "value": "application/json" } ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"tripId\": \"demo-1\",\n  \"pings\": [\n    { \"lat\": 12.9000, \"lon\": 77.6000, \"timestamp\": \"2026-01-01T00:00:00Z\", \"accuracyMeters\": 10 },\n    { \"lat\": 12.9450, \"lon\": 77.6000, \"timestamp\": \"2026-01-01T00:10:00Z\", \"accuracyMeters\": 10 }\n  ],\n  \"milestones\": [],\n  \"riders\": []\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/trips",
+          "host": [ "{{baseUrl}}" ],
+          "path": [ "api", "trips" ]
+        },
+        "description": "Two pings 10 minutes apart = one genuine gap, so the engine calls the routing provider once. Returns the total km, status OK, and providerCalls = 1."
+      }
+    },
+    {
+      "name": "3 · Distance (total + status)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/trips/demo-1/distance",
+          "host": [ "{{baseUrl}}" ],
+          "path": [ "api", "trips", "demo-1", "distance" ]
+        },
+        "description": "The headline number: total km, status, provider-call count, ruleVersion and inputHash."
+      }
+    },
+    {
+      "name": "4 · Explain (per-segment rules)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/trips/demo-1/explain",
+          "host": [ "{{baseUrl}}" ],
+          "path": [ "api", "trips", "demo-1", "explain" ]
+        },
+        "description": "The dispute view: every segment with the rule that produced it (ROUTED here). This is what you would put in front of a vendor."
+      }
+    },
+    {
+      "name": "5 · Bill (freeze the invoice)",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/trips/demo-1/bill",
+          "host": [ "{{baseUrl}}" ],
+          "path": [ "api", "trips", "demo-1", "bill" ]
+        },
+        "description": "Closes the invoice. Returns 204 No Content. After this the distance is frozen and can only change via signed deltas."
+      }
+    },
+    {
+      "name": "6 · Late pings after billing (signed delta)",
+      "request": {
+        "method": "POST",
+        "header": [ { "key": "Content-Type", "value": "application/json" } ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"pings\": [\n    { \"lat\": 12.9900, \"lon\": 77.6000, \"timestamp\": \"2026-01-01T00:20:00Z\", \"accuracyMeters\": 10 }\n  ]\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/trips/demo-1/pings",
+          "host": [ "{{baseUrl}}" ],
+          "path": [ "api", "trips", "demo-1", "pings" ]
+        },
+        "description": "A ping arrives after billing. The billed total is NOT rewritten; the response carries an appendedDelta with the signed correction."
+      }
+    },
+    {
+      "name": "7 · Deltas (the ledger)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/trips/demo-1/deltas",
+          "host": [ "{{baseUrl}}" ],
+          "path": [ "api", "trips", "demo-1", "deltas" ]
+        },
+        "description": "The append-only ledger of signed corrections for this trip. Proves the closed invoice was never mutated."
+      }
+    },
+    {
+      "name": "8 · Cross-tenant / no-token = 401 (optional)",
+      "request": {
+        "auth": { "type": "noauth" },
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/trips/demo-1/distance",
+          "host": [ "{{baseUrl}}" ],
+          "path": [ "api", "trips", "demo-1", "distance" ]
+        },
+        "description": "Same request with no bearer token returns 401 Unauthorized. Good one-liner to show tenant isolation and auth are real."
+      }
+    }
+  ]
+}
