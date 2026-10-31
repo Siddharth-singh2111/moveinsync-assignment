@@ -196,6 +196,28 @@ emit `providerCalls` count.
   pings, provider recovery, rule-version bump), we **never mutate** the closed result — we append a
   `DistanceDelta` (`+1.8 km`, with a reason) to the ledger. Billing reconciles from deltas.
 
+### Failure-mode table
+
+Every way the inputs or dependencies can misbehave, what the caller observes, and how the system
+recovers. None of these fails the trip or the invoice.
+
+| What fails | Detected by | What the user sees | How the system recovers |
+|---|---|---|---|
+| **Duplicate pings** (same coord+time) | `StreamCleaner` dedupe | Correct distance; duplicates silently dropped | Deterministic clean step — no action needed |
+| **Out-of-order pings** | `StreamCleaner` sort by timestamp | Correct distance regardless of arrival order | Sorted before anchoring; `ingest_out_of_order` metric |
+| **Low-accuracy fix** (`accuracyM` > threshold) | `StreamCleaner` accuracy filter | Noisy fix excluded from the total | Dropped before distance; threshold is configurable |
+| **Teleport jump** (implied speed > 120 km/h) | `StreamCleaner` teleport filter | Implausible spike excluded | Fix dropped; distance measured from the last good fix |
+| **Missing pickup/drop** | `AnchorBuilder` fallback chain | Distance still computed from best anchor | Falls back: home + sign-in → planned location + time |
+| **Trip-end far from office** (> 400 m) | `AnchorBuilder` office rule | Billed to planned office, not the stray fix | Planned office location substituted with trip-end time |
+| **Implausible routed segment** (> 100 km or too fast) | `RuleEngine` sanity check | Segment capped, labelled `REJECTED_SPEED` | Bounded fallback (haversine × 1.4) instead of the bad route |
+| **Routing provider timeout / 5xx** | `CircuitBreaker` (consecutive failures) | Trip billed on a bounded estimate, status `DEGRADED` | `DEGRADED_AERIAL` fallback; trip flagged for recompute |
+| **Provider keeps failing** | Circuit **opens** after threshold | Fast failure, no hanging requests; still billable | Half-open probe after cooldown tests recovery |
+| **Provider recovers** | Circuit closes; scheduled job | Corrected distance appears as a **signed delta** | `DegradedTripRecoveryJob` recomputes and appends the delta |
+| **Late pings after billing** | `TripService` (trip is `BILLED`) | Billed total unchanged; correction in the ledger | Recompute appends a signed `DistanceDelta`, invoice frozen |
+| **Duplicate / repeated compute** | Idempotency key `(tripId, inputHash, ruleVersion)` | Same result every time; no double-charge | No-op returns the stored result; no duplicate delta |
+| **Cross-tenant access attempt** | Tenant scoping from the JWT | `404` — the trip does not exist for that caller | Repository queries are always tenant-scoped |
+| **Missing / invalid token** | `JwtAuthenticationFilter` | `401 Unauthorized` | Stateless; caller re-authenticates at `/api/auth/login` |
+
 ---
 
 ## 8. Hardest flow — sequence diagram

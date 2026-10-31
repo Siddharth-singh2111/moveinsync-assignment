@@ -445,7 +445,8 @@ provider calls into 16 actual lookups across just 6 network round-trips. Reprodu
    by the benchmark above.
 3. **Failure handling** — circuit breaker + degraded fallback + scheduled auto-recompute; a
    failure-injection test (`FlakyRoutingProvider`) fails midway through a batch and the trips recover
-   and reconcile via deltas.
+   and reconcile via deltas. The full **failure-mode table** (what fails / what the user sees / how it
+   recovers) is in [DESIGN.md §7](DESIGN.md).
 4. **OOP** — clean controller/service/repository layering; a framework-free `core` engine; the
    Strategy pattern for segment rules; polymorphic, decorator-stacked routing providers.
 5. **Trade-offs** — documented in [DESIGN.md §12](DESIGN.md) (cost vs accuracy, degrade vs fail,
