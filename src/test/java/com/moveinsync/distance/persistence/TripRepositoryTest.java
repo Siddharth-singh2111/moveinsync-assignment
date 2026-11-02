@@ -28,6 +28,7 @@ class TripRepositoryTest {
         e.setTotalMeters(30_600);
         e.setProviderCalls(2);
         e.setResultStatus(ResultStatus.OK);
+        e.setLatestResultStatus(ResultStatus.OK);
         e.setComputedAt(Instant.parse("2026-01-01T00:00:00Z"));
         e.setInputsJson("{}");
         e.setSegmentsJson("[]");

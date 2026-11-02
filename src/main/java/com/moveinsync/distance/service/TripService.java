@@ -129,8 +129,9 @@ public class TripService {
                     })
                     .orElse(null);
             trip.setInputsJson(json.write(inputs));
+            trip.setLatestResultStatus(result.status());
             trips.save(trip);
-            return new TripComputation(billed, appended, TripStatus.BILLED);
+            return new TripComputation(billed, appended, TripStatus.BILLED, result.status());
         }
 
         TripEntity entity = existing.orElseGet(TripEntity::new);
@@ -142,7 +143,7 @@ public class TripService {
         trips.save(entity);
         log.info("trip {} tenant {} computed total={}m status={} providerCalls={}",
                 result.tripId(), tenantId, result.totalMeters(), result.status(), result.providerCalls());
-        return new TripComputation(result, null, entity.getStatus());
+        return new TripComputation(result, null, entity.getStatus(), result.status());
     }
 
     private TripEntity require(String tenantId, String tripId) {
@@ -163,6 +164,7 @@ public class TripService {
         e.setTotalMeters(result.totalMeters());
         e.setProviderCalls(result.providerCalls());
         e.setResultStatus(result.status());
+        e.setLatestResultStatus(result.status());
         e.setComputedAt(result.computedAt());
         e.setInputsJson(json.write(inputs));
         e.setSegmentsJson(json.write(result.segments()));

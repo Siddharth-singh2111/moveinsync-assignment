@@ -1,7 +1,6 @@
 package com.moveinsync.distance.persistence;
 
 import com.moveinsync.distance.core.model.ResultStatus;
-import com.moveinsync.distance.core.model.TripStatus;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
@@ -23,6 +22,6 @@ public interface TripRepository extends JpaRepository<TripEntity, Long> {
     @Query("select t from TripEntity t where t.tripId = :tripId and t.tenantId = :tenantId")
     Optional<TripEntity> findForUpdate(@Param("tripId") String tripId, @Param("tenantId") String tenantId);
 
-    /** Degraded trips that are not yet billed — candidates for automatic recovery. */
-    List<TripEntity> findByStatusNotAndResultStatus(TripStatus status, ResultStatus resultStatus);
+    /** Trips whose most recent compute had this status, across all tenants, billed or not. */
+    List<TripEntity> findByLatestResultStatus(ResultStatus latestResultStatus);
 }

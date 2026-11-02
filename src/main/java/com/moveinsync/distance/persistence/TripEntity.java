@@ -57,6 +57,14 @@ public class TripEntity {
     @Column(name = "result_status", nullable = false)
     private ResultStatus resultStatus;
 
+    /**
+     * How the most recent compute went. Differs from {@code resultStatus} on a billed trip, whose
+     * result stays frozen: this is what tells the recovery job a billed trip still needs correcting.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "latest_result_status", nullable = false)
+    private ResultStatus latestResultStatus;
+
     @Column(name = "computed_at", nullable = false)
     private Instant computedAt;
 
@@ -137,6 +145,14 @@ public class TripEntity {
 
     public void setResultStatus(ResultStatus resultStatus) {
         this.resultStatus = resultStatus;
+    }
+
+    public ResultStatus getLatestResultStatus() {
+        return latestResultStatus;
+    }
+
+    public void setLatestResultStatus(ResultStatus latestResultStatus) {
+        this.latestResultStatus = latestResultStatus;
     }
 
     public Instant getComputedAt() {
