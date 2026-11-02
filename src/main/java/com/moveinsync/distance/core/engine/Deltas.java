@@ -4,6 +4,7 @@ import com.moveinsync.distance.core.model.DistanceDelta;
 import com.moveinsync.distance.core.model.DistanceResult;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -45,6 +46,34 @@ public final class Deltas {
         }
         return Optional.of(new DistanceDelta(current.tripId(),
                 ref(previous), ref(current), deltaMeters, reason, at));
+    }
+
+    /**
+     * The correction still owed on a billed trip: the fresh total minus the billed total and every
+     * delta already in the ledger. Measuring against the ledger makes this idempotent — replaying
+     * the same evidence owes nothing — and stops corrections from being counted twice.
+     *
+     * @param ledger the trip's existing deltas, oldest first
+     */
+    public static Optional<DistanceDelta> sinceLedger(DistanceResult billed,
+                                                      List<DistanceDelta> ledger,
+                                                      DistanceResult current,
+                                                      String reason,
+                                                      Instant at) {
+        Objects.requireNonNull(billed, "billed");
+        Objects.requireNonNull(ledger, "ledger");
+        Objects.requireNonNull(current, "current");
+        if (!billed.tripId().equals(current.tripId())) {
+            throw new IllegalArgumentException("cannot delta across different trips");
+        }
+        long reconciledMeters = billed.totalMeters()
+                + ledger.stream().mapToLong(DistanceDelta::deltaMeters).sum();
+        long deltaMeters = current.totalMeters() - reconciledMeters;
+        if (deltaMeters == 0) {
+            return Optional.empty();
+        }
+        String fromRef = ledger.isEmpty() ? ref(billed) : ledger.get(ledger.size() - 1).toRef();
+        return Optional.of(new DistanceDelta(current.tripId(), fromRef, ref(current), deltaMeters, reason, at));
     }
 
     private static String ref(DistanceResult r) {

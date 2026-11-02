@@ -88,4 +88,46 @@ class TripServiceTest {
         assertThat(service.result("tenantA", "t-shared").totalMeters()).isEqualTo(tenantATotal);
         assertThat(service.result("tenantB", "t-shared").totalMeters()).isNotEqualTo(tenantATotal);
     }
+
+    @Test
+    void theSameLatePingDeliveredTwiceAppendsOneDelta() {
+        service.compute("tenantA", realGapTrip("t-retry"));
+        service.bill("tenantA", "t-retry");
+
+        service.ingestPings("tenantA", "t-retry", List.of(ping(12.9900, 77.6000, 1200)));
+        TripComputation retry = service.ingestPings("tenantA", "t-retry", List.of(ping(12.9900, 77.6000, 1200)));
+
+        assertThat(retry.appendedDelta()).isNull();
+        assertThat(service.ledger("tenantA", "t-retry")).hasSize(1);
+    }
+
+    @Test
+    void successiveLatePingsAddUpToTheTrueCorrection() {
+        service.compute("tenantA", realGapTrip("t-two"));
+        long billedTotal = service.result("tenantA", "t-two").totalMeters();
+        service.bill("tenantA", "t-two");
+
+        service.ingestPings("tenantA", "t-two", List.of(ping(12.9900, 77.6000, 1200)));
+        service.ingestPings("tenantA", "t-two", List.of(ping(13.0350, 77.6000, 1800)));
+
+        service.compute("tenantA-check", new TripInputs("t-two",
+                List.of(ping(12.9000, 77.6000, 0), ping(12.9450, 77.6000, 600),
+                        ping(12.9900, 77.6000, 1200), ping(13.0350, 77.6000, 1800)),
+                List.of(), null, null, null, null));
+        long trueTotal = service.result("tenantA-check", "t-two").totalMeters();
+        long ledgerTotal = service.ledger("tenantA", "t-two").stream().mapToLong(d -> d.deltaMeters()).sum();
+        assertThat(billedTotal + ledgerTotal).isEqualTo(trueTotal);
+    }
+
+    @Test
+    void aLatePingSurvivesARecomputeOfABilledTrip() {
+        service.compute("tenantA", realGapTrip("t-keep"));
+        service.bill("tenantA", "t-keep");
+        service.ingestPings("tenantA", "t-keep", List.of(ping(12.9900, 77.6000, 1200)));
+
+        TripComputation out = service.recompute("tenantA", "t-keep", "recompute");
+
+        assertThat(out.appendedDelta()).isNull();
+        assertThat(service.ledger("tenantA", "t-keep")).hasSize(1);
+    }
 }

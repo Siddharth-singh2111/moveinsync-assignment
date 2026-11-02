@@ -95,6 +95,44 @@ class DeltasTest {
         assertThat(delta.get().deltaMeters()).isPositive();
     }
 
+    @Test
+    void sinceLedgerMeasuresAgainstTheBilledTotalPlusExistingDeltas() {
+        DistanceResult billed = result("t1", 30_000, "billed");
+        DistanceDelta first = Deltas.sinceLedger(billed, List.of(), result("t1", 31_000, "one"), "late", T0)
+                .orElseThrow();
+        DistanceDelta second = Deltas.sinceLedger(billed, List.of(first), result("t1", 31_500, "two"), "late", T0)
+                .orElseThrow();
+
+        assertThat(first.deltaMeters()).isEqualTo(1_000);
+        assertThat(second.deltaMeters()).isEqualTo(500);
+        assertThat(second.fromRef()).isEqualTo(first.toRef());
+    }
+
+    @Test
+    void sinceLedgerOwesNothingWhenTheLedgerAlreadyCoversTheTotal() {
+        DistanceResult billed = result("t1", 30_000, "billed");
+        DistanceDelta applied = Deltas.sinceLedger(billed, List.of(), result("t1", 31_000, "one"), "late", T0)
+                .orElseThrow();
+
+        assertThat(Deltas.sinceLedger(billed, List.of(applied), result("t1", 31_000, "one"), "late", T0)).isEmpty();
+    }
+
+    @Test
+    void sinceLedgerCanReverseAnEarlierCorrection() {
+        DistanceResult billed = result("t1", 30_000, "billed");
+        DistanceDelta applied = Deltas.sinceLedger(billed, List.of(), result("t1", 31_000, "one"), "late", T0)
+                .orElseThrow();
+
+        assertThat(Deltas.sinceLedger(billed, List.of(applied), result("t1", 30_000, "billed"), "fix", T0)
+                .orElseThrow().deltaMeters()).isEqualTo(-1_000);
+    }
+
+    @Test
+    void sinceLedgerRefusesDifferentTrips() {
+        assertThatThrownBy(() -> Deltas.sinceLedger(result("t1", 10, "h"), List.of(), result("t2", 20, "h"), "x", T0))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
     private static DistanceEngine engine() {
         return new DistanceEngine(
                 new StreamCleaner(50.0, 120.0),

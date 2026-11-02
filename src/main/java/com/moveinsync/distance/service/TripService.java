@@ -23,13 +23,16 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
 
 /**
  * Application service over the engine and the stores. Enforces tenant scoping on every access,
  * keeps a billed trip's result immutable (recording corrections as deltas), and overwrites the
- * stored result only while the trip is not yet billed.
+ * stored result only while the trip is not yet billed. A billed trip still keeps its latest inputs,
+ * so later evidence builds on earlier evidence. Each change holds the trip's row lock, so concurrent
+ * writes to one trip cannot lose pings or claim the same correction twice.
  *
  * <p>Logs carry only non-identifying fields (trip id, tenant, totals) — never coordinates or any
  * personal data.
@@ -60,23 +63,27 @@ public class TripService {
 
     @Transactional
     public TripComputation compute(String tenantId, TripInputs inputs) {
-        return persist(tenantId, inputs, run(inputs), "compute");
+        Optional<TripEntity> existing = trips.findForUpdate(inputs.tripId(), tenantId);
+        return persist(tenantId, existing, inputs, run(inputs), "compute");
     }
 
     @Transactional
     public TripComputation recompute(String tenantId, String tripId, String reason) {
-        TripInputs inputs = json.read(require(tenantId, tripId).getInputsJson(), TripInputs.class);
-        return persist(tenantId, inputs, run(inputs), reason);
+        TripEntity trip = requireForUpdate(tenantId, tripId);
+        TripInputs inputs = json.read(trip.getInputsJson(), TripInputs.class);
+        return persist(tenantId, Optional.of(trip), inputs, run(inputs), reason);
     }
 
     @Transactional
     public TripComputation ingestPings(String tenantId, String tripId, List<Ping> newPings) {
-        TripInputs existing = json.read(require(tenantId, tripId).getInputsJson(), TripInputs.class);
-        List<Ping> merged = new ArrayList<>(existing.pings());
+        TripEntity trip = requireForUpdate(tenantId, tripId);
+        TripInputs existing = json.read(trip.getInputsJson(), TripInputs.class);
+        // A retried delivery adds nothing, so a repeated ping leaves the inputs exactly as they were.
+        LinkedHashSet<Ping> merged = new LinkedHashSet<>(existing.pings());
         merged.addAll(newPings);
-        TripInputs updated = new TripInputs(existing.tripId(), merged, existing.milestones(),
+        TripInputs updated = new TripInputs(existing.tripId(), new ArrayList<>(merged), existing.milestones(),
                 existing.ridersById(), existing.plannedOffice(), existing.actualTripEnd(), existing.tripEndTime());
-        return persist(tenantId, updated, run(updated), "late-pings");
+        return persist(tenantId, Optional.of(trip), updated, run(updated), "late-pings");
     }
 
     @Transactional
@@ -105,13 +112,14 @@ public class TripService {
         return result;
     }
 
-    private TripComputation persist(String tenantId, TripInputs inputs, DistanceResult result, String reason) {
-        Optional<TripEntity> existing = trips.findByTripIdAndTenantId(inputs.tripId(), tenantId);
-
+    private TripComputation persist(String tenantId, Optional<TripEntity> existing, TripInputs inputs,
+                                    DistanceResult result, String reason) {
         if (existing.isPresent() && existing.get().getStatus() == TripStatus.BILLED) {
             // A billed trip's number is never rewritten; a change is recorded as a signed delta.
-            DistanceResult previous = toResult(existing.get());
-            DistanceDelta appended = Deltas.between(previous, result, reason, Instant.now(clock))
+            TripEntity trip = existing.get();
+            DistanceResult billed = toResult(trip);
+            DistanceDelta appended = Deltas.sinceLedger(billed, ledger(tenantId, inputs.tripId()), result,
+                            reason, Instant.now(clock))
                     .map(delta -> {
                         deltas.save(toDeltaEntity(tenantId, delta));
                         metrics.recordDeltaAppended();
@@ -120,7 +128,9 @@ public class TripService {
                         return delta;
                     })
                     .orElse(null);
-            return new TripComputation(previous, appended, TripStatus.BILLED);
+            trip.setInputsJson(json.write(inputs));
+            trips.save(trip);
+            return new TripComputation(billed, appended, TripStatus.BILLED);
         }
 
         TripEntity entity = existing.orElseGet(TripEntity::new);
@@ -137,6 +147,11 @@ public class TripService {
 
     private TripEntity require(String tenantId, String tripId) {
         return trips.findByTripIdAndTenantId(tripId, tenantId)
+                .orElseThrow(() -> new TripNotFoundException(tripId));
+    }
+
+    private TripEntity requireForUpdate(String tenantId, String tripId) {
+        return trips.findForUpdate(tripId, tenantId)
                 .orElseThrow(() -> new TripNotFoundException(tripId));
     }
 
