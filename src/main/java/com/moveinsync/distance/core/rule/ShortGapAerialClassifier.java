@@ -15,7 +15,7 @@ final class ShortGapAerialClassifier implements SegmentClassifier {
     @Override
     public Optional<Segment> classify(PairContext c) {
         boolean shortAndPlausible = c.hasPositiveGap()
-                && c.gapSeconds() <= c.config().shortGapSeconds()
+                && c.gapSeconds() < c.config().shortGapSeconds()
                 && c.aerialSpeedKmh() <= c.config().maxSpeedKmh();
         if (!c.hasPositiveGap() || shortAndPlausible) {
             return Optional.of(new Segment(c.from().location(), c.to().location(),

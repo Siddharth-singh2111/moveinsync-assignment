@@ -7,7 +7,7 @@ package com.moveinsync.distance.core.rule;
  *
  * @param version          monotonically increasing rule-set version
  * @param maxSpeedKmh       speed above which a fix/route is implausible
- * @param shortGapSeconds   gaps at or below this are treated as short (straight-line)
+ * @param shortGapSeconds   gaps below this are treated as short (straight-line)
  * @param parkedSpeedKmh    below this implied speed the cab is considered parked
  * @param routedMaxMeters   a single routed segment above this is rejected
  * @param degradedMultiplier aerial multiplier used when the provider is unavailable

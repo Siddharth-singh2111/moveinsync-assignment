@@ -40,6 +40,21 @@ class RuleEngineTest {
     }
 
     @Test
+    void aGapOfExactlyTheShortLimitIsNoLongerShort() {
+        List<Segment> justUnder = engine.segment(List.of(
+                point(12.9000, 77.6000, 0),
+                point(12.9090, 77.6000, 69)));   // ~1 km
+        List<Segment> atLimit = engine.segment(List.of(
+                point(12.9000, 77.6000, 0),
+                point(12.9090, 77.6000, 70)));
+
+        assertThat(justUnder).singleElement().satisfies(s ->
+                assertThat(s.rule()).isEqualTo(SegmentRule.SHORT_GAP_AERIAL));
+        assertThat(atLimit).singleElement().satisfies(s ->
+                assertThat(s.rule()).isEqualTo(SegmentRule.ROUTED));
+    }
+
+    @Test
     void longSlowGapIsParked() {
         List<Segment> segments = engine.segment(List.of(
                 point(12.90000, 77.6000, 0),
