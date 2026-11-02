@@ -41,8 +41,7 @@ For the full design rationale, the data model, the trade-off table and the as-bu
 
 1. **Deterministic** — same inputs + same `ruleVersion` ⇒ *byte-identical* kilometres. Distances are
    summed in **integer metres** and converted to km exactly once, rounded half-up to 3 decimals, so
-   there is no floating-point drift. Two runs that disagree by 0.1 km would be a billing bug; a
-   golden-file test asserts they never do.
+   there is no floating-point drift. Tests assert that repeated and concurrent runs agree.
 2. **Explainable** — every output segment carries the rule that produced it (`SHORT_GAP_AERIAL`,
    `PARKED`, `ROUTED`, `REJECTED_SPEED`, `DEGRADED_AERIAL`). The `/explain` endpoint returns the full
    segment-by-segment breakdown — the view you put in front of a vendor during a dispute.
@@ -50,10 +49,10 @@ For the full design rationale, the data model, the trade-off table and the as-bu
    a bounded aerial estimate and marked `DEGRADED`, and a background job **auto-recomputes** it once
    the provider recovers. The system never blocks billing on a flaky dependency.
 4. **Idempotent & honest** — a billed trip's distance is **never rewritten**. Late pings, a provider
-   recovery, or a rule-version bump append a **signed delta** (`+1.8 km`, with a reason) to an
-   append-only ledger. Billing reconciles from deltas; the closed invoice stays frozen.
-5. **Tenant-isolated** — the tenant is taken from the **JWT**, never from the request body, so one
-   client can never read another's trips. No coordinates, phone numbers or emails appear in logs or
+   recovery, or a rule-version bump append a **signed delta** (`+1.8 km`, with a reason) to a ledger.
+   Each delta covers only what is still owed, so a re-sent ping adds nothing.
+5. **Tenant-isolated** — the tenant is taken from the **JWT**, never from the request body, and trip
+   ids are unique per tenant, so one client can never read or overwrite another's trips. No coordinates, phone numbers or emails appear in logs or
    error bodies.
 
 ---
@@ -116,8 +115,9 @@ flowchart TB
   (deterministic fake / fault-injecting) are layered as decorators (`cache → breaker → base`), so the
   breaker never counts a cache hit and the cache treats a breaker fast-fail as a miss. A real HTTP
   provider drops in without touching the engine.
-- **Idempotency lives in the service**, keyed by `(tripId, inputHash, ruleVersion)`. Re-running with
-  identical inputs returns the stored result instead of recomputing.
+- **Idempotency comes from measuring the change.** A recompute always re-runs the engine, and a
+  billed trip gets a delta only for the gap between the new total and the billed total plus its
+  ledger. Each write holds the trip's row lock, so concurrent writes cannot double-count.
 
 ---
 
@@ -194,11 +194,11 @@ sequenceDiagram
     SVC->>DB: trip BILLED at 29.1 km (now frozen)
 
     Note over RP: provider recovers, circuit half-open to CLOSED
-    SVC->>SVC: DegradedTripRecoveryJob fires (scheduled)
+    SVC->>SVC: DegradedTripRecoveryJob finds the trip (every 30 s)
     SVC->>RE: recompute, same inputs and ruleVersion
     RE->>RP: driveMeters(gaps) succeeds and caches
     RE-->>SVC: result 30.6 km, status OK
-    SVC->>DB: append DistanceDelta +1.5 km, PROVIDER_RECOVERED
+    SVC->>DB: append delta +1.5 km, reason provider-recovered
     SVC-->>Op: /explain and /deltas reconcile the difference
 ```
 
@@ -234,12 +234,12 @@ docker compose down -v
 
 ## Build, test and benchmark
 
-A JDK 21 toolchain is needed for these (the Maven wrapper `./mvnw` is checked in, so Maven itself is
-not). No Docker is required for the test suite — it uses in-memory **H2**.
+A JDK (21 or newer) is needed for these. The Maven wrapper `./mvnw` is checked in, so Maven itself is
+not. The test suite uses in-memory **H2**, so it needs no Docker.
 
 ```bash
-./mvnw test                 # full unit + web + persistence suite (H2, no Docker)
-./mvnw verify               # test + the Testcontainers PostgreSQL integration test
+./mvnw test                 # all tests (the PostgreSQL test skips itself without Docker)
+./mvnw verify               # the same tests, as CI runs them
 ./mvnw -q package           # build the runnable jar (target/*.jar)
 
 ./run-benchmark.sh          # headless load test: 10,000 trips × 1,500 pings
@@ -282,9 +282,12 @@ users are defined in [`application.yml`](src/main/resources/application.yml), al
 | `GET`  | `/api/trips/{id}/deltas` | any | Signed-delta ledger |
 
 Access control: a missing or invalid token returns **401**; a valid token with the wrong role returns
-**403**; a trip belonging to another tenant returns **404** (it simply does not exist for you).
+**403**; a trip belonging to another tenant returns **404**. A malformed request returns **400**, and
+a write that clashes with a concurrent first compute of the same trip returns **409**.
 
 ### Example payloads
+
+The values below show the response shapes. Hashes and timestamps will differ on your run.
 
 **Log in** — returns the token used as `Authorization: Bearer <token>` on every other call.
 
@@ -344,10 +347,11 @@ curl -s http://localhost:8080/api/trips/demo-1/explain -H "Authorization: Bearer
 ```
 
 **Late pings after billing** — the response's `appendedDelta` is the signed correction; the billed
-total is never rewritten:
+total is never rewritten. `status` reports the result (`OK` or `DEGRADED`), not the billing state.
+Sending the same ping again appends nothing:
 
 ```json
-{ "tripId":"demo-1", "totalKm":6.505, "status":"BILLED",
+{ "tripId":"demo-1", "totalKm":6.505, "status":"OK",
   "appendedDelta": { "deltaKm":6.505, "deltaMeters":6505, "reason":"late-pings",
                      "fromRef":"…", "toRef":"…", "createdAt":"2026-01-01T00:20:03Z" } }
 ```
@@ -373,10 +377,10 @@ rule — cheap cases first, the paid provider only for genuine gaps:
 
 | Condition | Rule | Distance used |
 |---|---|---|
-| Gap below `short-gap-seconds` at plausible speed | `SHORT_GAP_AERIAL` | haversine (straight line) |
+| Gap below `short-gap-seconds` at plausible speed, or no time gap | `SHORT_GAP_AERIAL` | haversine (straight line) |
 | Long gap but speed below `parked-speed-kmh` | `PARKED` | haversine (cab barely moved) |
 | A genuine gap | `ROUTED` | provider driving distance (batched + cached) |
-| Routed segment > `routed-max-km`, or implausibly fast | `REJECTED_SPEED` | bounded fallback (haversine × 1.4) |
+| Routed segment > `routed-max-km`, or both routed and aerial × 1.4 imply a speed above `max-speed-kmh` | `REJECTED_SPEED` | haversine; the routed figure is discarded |
 | Provider circuit is open | `DEGRADED_AERIAL` | haversine × `degraded-multiplier`; trip → `DEGRADED` |
 
 ---
@@ -421,7 +425,7 @@ stamped onto every result as `ruleVersion`, so a threshold change is always trac
 
 ## Benchmark results
 
-Measured locally (Apple Silicon laptop, JDK), **10,000 trips × 1,500 pings**:
+Measured locally (Apple Silicon laptop, JDK 27), **10,000 trips × 1,500 pings**:
 
 | Metric | Value |
 |---|---|
@@ -431,28 +435,74 @@ Measured locally (Apple Silicon laptop, JDK), **10,000 trips × 1,500 pings**:
 | Batched round-trips to the provider (whole run) | **6** |
 | Heap used | ~67 MB |
 
-The before-vs-after routing number is the headline: the cache plus batching turn 105,000 would-be
-provider calls into 16 actual lookups across just 6 network round-trips. Reproduce it with
-`./run-benchmark.sh`.
+Reproduce it with `./run-benchmark.sh`. Read these numbers with two caveats:
+
+- **The caching figure is a best case.** The synthetic trips hop between 16 fixed hubs, so almost
+  every gap repeats. Real trips would hit the cache far less often.
+- **This measures the engine alone**, with an instant in-memory fake provider. There is no HTTP,
+  database or network delay, so API throughput will be much lower.
+
+### Where it stops scaling
+
+- **Provider rate limit:** usually the first limit. Each cache miss costs a paid, rate-limited call.
+- **Database connections:** a write holds its row lock and connection during routing. With a pool of
+  10 connections and a 200 ms provider call, one instance handles about 50 uncached computes per
+  second (10 / 0.2).
+- **Large trips under late pings:** every late ping rewrites the trip's whole JSON inputs, so cost
+  grows with trip size.
+- **More than one instance:** each has its own cache, and each would run the recovery job. The row
+  lock keeps the results correct, but the job would repeat work and the hit rate would drop.
+
+Next steps at that point: a shared cache, routing outside the transaction, and a queue for ingestion.
+
+---
+
+## Assumptions, trade-offs and limitations
+
+**Assumptions**
+
+- The routing provider is an interface. Only a deterministic fake (haversine × 1.3) is wired in, so
+  no API key is needed. A real provider is a new adapter behind that interface.
+- A rejected route is billed at plain haversine. The brief says to reject it but not what to bill.
+- Billing closes per trip, and corrections after that are handled by a separate billing step.
+
+**Main trade-offs** (full table in [DESIGN.md §12](DESIGN.md))
+
+- **Availability over immediate accuracy:** when the provider is down, billing continues on a labelled
+  estimate and is corrected later, rather than stopping.
+- **Consistency over write latency:** a write holds the trip's row lock through routing, so concurrent
+  updates cannot be lost, at the cost of slower writes to one trip.
+- **Stale cache over repeat cost:** a route can be up to 7 days old, which is acceptable because road
+  distances rarely change.
+
+**Known limitations**
+
+- Employees can read every trip in their tenant, not only their own.
+- Demo users and passwords live in configuration. A real deployment needs an identity provider.
+- Logs are parameterised text lines, not JSON. Metrics do not yet cover circuit state, error rate,
+  retries, lag or queue depth.
+- The ledger is append-only by code. The database does not enforce it.
+- The schema comes from Hibernate, with no migration tool.
 
 ---
 
 ## How this maps to the evaluation criteria
 
 1. **Authentication & tenant isolation** — stateless JWT, roles (employee/operator/admin), tenant
-   taken from the token; cross-tenant reads return 404, missing token 401, wrong role 403.
-2. **Cost (time & space)** — `O(n log n)` per trip, provider calls bounded by distinct gaps, backed
-   by the benchmark above.
+   taken from the token; cross-tenant reads return 404, missing token 401, wrong role 403. Trip ids
+   are unique per tenant, so writes are isolated too.
+2. **Cost (time & space)** — `O(n log n)` time and `O(n)` space per trip, provider calls bounded by
+   distinct gaps, backed by the benchmark, with scaling limits stated above.
 3. **Failure handling** — circuit breaker + degraded fallback + scheduled auto-recompute; a
-   failure-injection test (`FlakyRoutingProvider`) fails midway through a batch and the trips recover
-   and reconcile via deltas. The full **failure-mode table** (what fails / what the user sees / how it
+   failure-injection test (`FlakyRoutingProvider`) fails partway through a run and exactly the affected
+   trips degrade. A concurrency test runs many writers against one billed trip. The full **failure-mode table** (what fails / what the user sees / how it
    recovers) is in [DESIGN.md §7](DESIGN.md).
 4. **OOP** — clean controller/service/repository layering; a framework-free `core` engine; the
    Strategy pattern for segment rules; polymorphic, decorator-stacked routing providers.
 5. **Trade-offs** — documented in [DESIGN.md §12](DESIGN.md) (cost vs accuracy, degrade vs fail,
    append vs mutate, deterministic vs real-time).
 6. **Monitoring** — Micrometer counters/gauges/timer: provider calls, cache hits, degraded trips,
-   rejections, deltas, and compute p50/p99.
+   rejections, deltas, and compute p50/p99. See the limitations below for what is not measured.
 7. **Caching** — snapped-cell routing cache (Caffeine, size + TTL) with before/after call counts
    (105k → 16).
 8. **Error handling** — non-leaking `@RestControllerAdvice`; no coordinates, phone or email in logs

@@ -117,7 +117,7 @@
           "host": [ "{{baseUrl}}" ],
           "path": [ "api", "trips", "demo-1", "pings" ]
         },
-        "description": "A ping arrives after billing. The billed total is NOT rewritten; the response carries an appendedDelta with the signed correction."
+        "description": "A ping arrives after billing. The billed total is NOT rewritten; the response carries an appendedDelta with the signed correction. Sending the same ping again appends nothing."
       }
     },
     {
@@ -134,7 +134,7 @@
       }
     },
     {
-      "name": "8 · Cross-tenant / no-token = 401 (optional)",
+      "name": "8 · No token = 401 (optional)",
       "request": {
         "auth": { "type": "noauth" },
         "method": "GET",
@@ -144,7 +144,7 @@
           "host": [ "{{baseUrl}}" ],
           "path": [ "api", "trips", "demo-1", "distance" ]
         },
-        "description": "Same request with no bearer token returns 401 Unauthorized. Good one-liner to show tenant isolation and auth are real."
+        "description": "Same request with no bearer token returns 401 Unauthorized."
       }
     }
   ]

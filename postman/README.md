@@ -27,9 +27,9 @@ What each step shows:
 | 3 | Distance | "The billable total, its status, and the rule version it was computed under." |
 | 4 | Explain | "Every segment labelled with the rule that produced it — this is the dispute view." |
 | 5 | Bill | "Close the invoice. 204. From here the number is frozen." |
-| 6 | Late pings | "A ping arrives *after* billing. The billed total is untouched — instead I get a signed delta." |
+| 6 | Late pings | "A ping arrives *after* billing. The billed total is untouched — instead I get a signed delta. Send it again and nothing is added." |
 | 7 | Deltas | "The append-only ledger. We never rewrite a closed invoice; we reconcile with deltas." |
-| 8 | 401 (optional) | "Same call with no token = 401. Tenant isolation and auth are real." |
+| 8 | 401 (optional) | "Same call with no token = 401. Auth is enforced." |
 
 ## Option B — curl (paste one line at a time)
 
