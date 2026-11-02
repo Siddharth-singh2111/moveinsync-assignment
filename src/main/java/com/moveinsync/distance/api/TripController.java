@@ -50,7 +50,7 @@ public class TripController {
     @PostMapping("/{tripId}/pings")
     public Dtos.DistanceResponse ingestPings(@AuthenticationPrincipal AuthenticatedUser caller,
                                              @PathVariable String tripId,
-                                             @RequestBody Dtos.IngestPingsRequest request) {
+                                             @Valid @RequestBody Dtos.IngestPingsRequest request) {
         TripComputation out = service.ingestPings(caller.tenantId(), tripId, ApiMapper.toPings(request));
         return ApiMapper.toDistanceResponse(out.result(), out.appendedDelta());
     }

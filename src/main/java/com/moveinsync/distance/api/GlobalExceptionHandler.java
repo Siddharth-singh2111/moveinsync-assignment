@@ -5,8 +5,10 @@ import com.moveinsync.distance.security.InvalidCredentialsException;
 import com.moveinsync.distance.service.TripNotFoundException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -28,10 +30,17 @@ public class GlobalExceptionHandler {
                 .body(new Dtos.ErrorResponse("trip_not_found", e.getMessage()));
     }
 
-    @ExceptionHandler({MethodArgumentNotValidException.class, IllegalArgumentException.class})
+    @ExceptionHandler({MethodArgumentNotValidException.class, HttpMessageNotReadableException.class,
+            IllegalArgumentException.class})
     public ResponseEntity<Dtos.ErrorResponse> badRequest(Exception e) {
         return ResponseEntity.badRequest()
                 .body(new Dtos.ErrorResponse("invalid_request", "the request was invalid"));
+    }
+
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<Dtos.ErrorResponse> conflict(DataIntegrityViolationException e) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(new Dtos.ErrorResponse("conflict", "the trip was changed by another request; retry"));
     }
 
     @ExceptionHandler(MissingRequestHeaderException.class)

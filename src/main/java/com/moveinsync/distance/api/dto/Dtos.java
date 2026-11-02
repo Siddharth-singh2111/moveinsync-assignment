@@ -1,6 +1,8 @@
 package com.moveinsync.distance.api.dto;
 
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -15,7 +17,7 @@ public final class Dtos {
     private Dtos() {
     }
 
-    public record PingDto(double lat, double lon, Instant timestamp, double accuracyMeters) {
+    public record PingDto(double lat, double lon, @NotNull Instant timestamp, double accuracyMeters) {
     }
 
     public record MilestoneDto(String kind, String riderId, Double lat, Double lon, Instant time) {
@@ -27,7 +29,7 @@ public final class Dtos {
     }
 
     public record ComputeTripRequest(@NotBlank String tripId,
-                                     List<PingDto> pings,
+                                     List<@Valid PingDto> pings,
                                      List<MilestoneDto> milestones,
                                      List<RiderDto> riders,
                                      Double officeLat, Double officeLon,
@@ -35,7 +37,7 @@ public final class Dtos {
                                      Instant tripEndTime) {
     }
 
-    public record IngestPingsRequest(List<PingDto> pings) {
+    public record IngestPingsRequest(List<@Valid PingDto> pings) {
     }
 
     public record SegmentDto(double fromLat, double fromLon, double toLat, double toLon,

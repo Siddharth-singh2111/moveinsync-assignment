@@ -116,4 +116,24 @@ class TripControllerTest {
                         .header("Authorization", bearer("tenantB", Role.OPERATOR)))
                 .andExpect(status().isNotFound());
     }
+
+    @Test
+    void malformedJsonIsABadRequest() throws Exception {
+        mvc.perform(post("/api/trips")
+                        .header("Authorization", bearer("tenantA", Role.OPERATOR))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{not json"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("invalid_request"));
+    }
+
+    @Test
+    void aPingWithoutATimestampIsABadRequest() throws Exception {
+        mvc.perform(post("/api/trips")
+                        .header("Authorization", bearer("tenantA", Role.OPERATOR))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"tripId\":\"api-bad\",\"pings\":[{\"lat\":12.9,\"lon\":77.6,\"accuracyMeters\":10}]}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("invalid_request"));
+    }
 }
