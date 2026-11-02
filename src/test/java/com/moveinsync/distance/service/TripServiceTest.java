@@ -75,4 +75,17 @@ class TripServiceTest {
         assertThatThrownBy(() -> service.result("tenantB", "t-iso"))
                 .isInstanceOf(TripNotFoundException.class);
     }
+
+    @Test
+    void anotherTenantUsingTheSameTripIdLeavesTheFirstTenantsTripIntact() {
+        service.compute("tenantA", realGapTrip("t-shared"));
+        long tenantATotal = service.result("tenantA", "t-shared").totalMeters();
+
+        service.compute("tenantB", new TripInputs("t-shared",
+                List.of(ping(12.0000, 77.6000, 0), ping(12.1000, 77.6000, 600)),
+                List.of(), null, null, null, null));
+
+        assertThat(service.result("tenantA", "t-shared").totalMeters()).isEqualTo(tenantATotal);
+        assertThat(service.result("tenantB", "t-shared").totalMeters()).isNotEqualTo(tenantATotal);
+    }
 }

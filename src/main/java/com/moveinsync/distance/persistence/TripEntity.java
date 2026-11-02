@@ -6,8 +6,11 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
@@ -16,13 +19,18 @@ import java.time.Instant;
 /**
  * A trip and its latest computed result. The raw inputs and the segment breakdown are stored as
  * JSON so a recompute can replay them; the totals and hash are columns so they can be queried and
- * compared cheaply. {@code tenantId} scopes every access.
+ * compared cheaply. A trip id is unique only within its tenant, so two clients can use the same id
+ * without touching each other's trip; {@code tenantId} scopes every access.
  */
 @Entity
-@Table(name = "trips")
+@Table(name = "trips", uniqueConstraints = @UniqueConstraint(
+        name = "uk_trips_tenant_trip", columnNames = {"tenant_id", "trip_id"}))
 public class TripEntity {
 
     @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
     @Column(name = "trip_id", nullable = false)
     private String tripId;
 
@@ -61,6 +69,10 @@ public class TripEntity {
     private String segmentsJson;
 
     public TripEntity() {
+    }
+
+    public Long getId() {
+        return id;
     }
 
     public String getTripId() {

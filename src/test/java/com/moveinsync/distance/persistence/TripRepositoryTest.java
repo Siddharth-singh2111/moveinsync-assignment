@@ -5,10 +5,12 @@ import com.moveinsync.distance.core.model.TripStatus;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
+import org.springframework.dao.DataIntegrityViolationException;
 
 import java.time.Instant;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 @DataJpaTest
 class TripRepositoryTest {
@@ -42,5 +44,20 @@ class TripRepositoryTest {
     void doesNotReturnTripForAnotherTenant() {
         trips.save(trip("t1", "tenantA"));
         assertThat(trips.findByTripIdAndTenantId("t1", "tenantB")).isEmpty();
+    }
+
+    @Test
+    void twoTenantsCanUseTheSameTripId() {
+        trips.saveAndFlush(trip("t1", "tenantA"));
+        trips.saveAndFlush(trip("t1", "tenantB"));
+        assertThat(trips.findByTripIdAndTenantId("t1", "tenantA")).isPresent();
+        assertThat(trips.findByTripIdAndTenantId("t1", "tenantB")).isPresent();
+    }
+
+    @Test
+    void aTripIdIsUniqueWithinATenant() {
+        trips.saveAndFlush(trip("t1", "tenantA"));
+        assertThatThrownBy(() -> trips.saveAndFlush(trip("t1", "tenantA")))
+                .isInstanceOf(DataIntegrityViolationException.class);
     }
 }
