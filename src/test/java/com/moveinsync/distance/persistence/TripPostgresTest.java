@@ -63,5 +63,23 @@ class TripPostgresTest {
         assertThat(out.appendedDelta().deltaMeters()).isPositive();
         assertThat(service.result("tenantA", "pg-1").totalMeters()).isEqualTo(billed);
         assertThat(service.ledger("tenantA", "pg-1")).hasSize(1);
+
+        // A retried delivery changes nothing, and the row lock works on the real database.
+        TripComputation retry = service.ingestPings("tenantA", "pg-1",
+                List.of(ping(12.9900, 77.6000, 1200)));
+        assertThat(retry.appendedDelta()).isNull();
+        assertThat(service.ledger("tenantA", "pg-1")).hasSize(1);
+    }
+
+    @Test
+    void twoTenantsKeepSeparateTripsWithTheSameIdOnRealPostgres() {
+        TripInputs trip = new TripInputs("pg-shared",
+                List.of(ping(12.9000, 77.6000, 0), ping(12.9450, 77.6000, 600)),
+                List.of(), null, null, null, null);
+        service.compute("tenantA", trip);
+        service.compute("tenantB", trip);
+
+        assertThat(service.result("tenantA", "pg-shared").totalMeters())
+                .isEqualTo(service.result("tenantB", "pg-shared").totalMeters());
     }
 }
